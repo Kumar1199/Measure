@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: form-measure
+    runtime: node
+    plan: free
+    region: singapore
+    repo: https://github.com/Kumar1199/Measure
+    branch: main
+    buildCommand: npm ci --include=dev && npm run setup:vision && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22.23.3"
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"

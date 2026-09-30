@@ -30,7 +30,13 @@ $env:Path = 'D:\tailor\.runtime;' + $env:Path
 .\.runtime\node.exe node_modules/next/dist/bin/next dev --hostname 0.0.0.0
 ```
 
-## Workflow
+## Deploy to Render
+
+The root `render.yaml` defines a free Node web service in Singapore, tracking `main`. The build installs development dependencies, downloads the MediaPipe model/WASM assets, and builds Next.js. `npm start` binds to `0.0.0.0` and uses Render's `PORT` environment variable. No application secrets or database are needed. HTTPS on the deployed domain supports camera permissions.
+
+Create a Render Blueprint from this repository to apply the configuration. Render assigns the public URL when the service is created. Free services can sleep when idle, so an initial visit may take longer. See [Render's Next.js guide](https://render.com/docs/deploy-nextjs-app).
+
+## Capture workflow
 
 1. Enter barefoot height, output unit and fit profile. Fit preferences set shirt hem length and trouser clearance.
 2. Enable the camera. Use fitted clothing, even light, a level camera and a plain background. Keep the full body visible.
