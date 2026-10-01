@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { CameraViewport } from "@/components/CameraViewport";
+import { CaptureReview } from "@/components/CaptureReview";
 import { MeasurementDashboard } from "@/components/MeasurementDashboard";
 import { BodyGuide } from "@/components/BodyGuide";
 import { createResult } from "@/lib/measurementCalculations";
@@ -34,7 +35,7 @@ import type {
 } from "@/lib/types";
 
 export default function Studio() {
-  const [height, setHeight] = useState("175"),
+  const [height, setHeight] = useState(""),
     [heightUnit, setHeightUnit] = useState<Unit>("cm"),
     [unit, setUnit] = useState<Unit>("cm"),
     [gender, setGender] = useState<Gender>("Unisex");
@@ -47,6 +48,7 @@ export default function Studio() {
     [help, setHelp] = useState(false),
     [preferences, setPreferences] = useState(false),
     [sessionKey, setSessionKey] = useState(0);
+  const [captures, setCaptures] = useState<[Capture, Capture] | null>(null);
   const heightCm = heightUnit === "cm" ? Number(height) : Number(height) * 2.54;
   const valid =
     height.trim() !== "" &&
@@ -74,6 +76,7 @@ export default function Studio() {
     try {
       setError("");
       setResult(createResult(front, sideCapture, profile));
+      setCaptures(null);
       setState("RESULTS");
     } catch (e) {
       setError(
@@ -86,6 +89,7 @@ export default function Studio() {
     }
   };
   const reset = () => {
+    setCaptures(null);
     setResult(null);
     setState("IDLE");
     setActive(false);
@@ -180,6 +184,20 @@ export default function Studio() {
               result={result}
               onReset={reset}
             />
+          ) : captures ? (
+            <>
+              <CaptureReview
+                captures={captures}
+                heightCm={heightCm}
+                onComplete={complete}
+                onRetake={reset}
+              />
+              {error && (
+                <p className="inline-error" role="alert">
+                  {error}
+                </p>
+              )}
+            </>
           ) : (
             <>
               <div className="section-heading">
@@ -254,7 +272,9 @@ export default function Studio() {
                   <CameraViewport
                     key={sessionKey}
                     disabled={!valid}
-                    onComplete={complete}
+                    onComplete={(front, sideCapture) =>
+                      setCaptures([front, sideCapture])
+                    }
                     onState={setState}
                     onActive={setActive}
                   />
@@ -328,6 +348,7 @@ export default function Studio() {
                           type="number"
                           step="0.1"
                           value={height}
+                          placeholder="Enter measured height"
                           aria-describedby={!valid ? "height-error" : undefined}
                           onChange={(e) => setHeight(e.target.value)}
                         />
@@ -340,10 +361,12 @@ export default function Studio() {
                               onClick={() => {
                                 if (u !== heightUnit) {
                                   setHeight(
-                                    (u === "cm"
-                                      ? Number(height) * 2.54
-                                      : Number(height) / 2.54
-                                    ).toFixed(1),
+                                    height.trim() === ""
+                                      ? ""
+                                      : (u === "cm"
+                                          ? Number(height) * 2.54
+                                          : Number(height) / 2.54
+                                        ).toFixed(1),
                                   );
                                   setHeightUnit(u);
                                 }

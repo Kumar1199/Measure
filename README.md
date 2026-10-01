@@ -61,6 +61,14 @@ Sample results use synthetic geometry, are clearly labeled, and never replace a 
 
 ## Measurement limitations
 
+### Capture and calibration improvements
+
+- Live scans require the user's measured barefoot height; there is no prefilled height.
+- Each view retains up to seven consecutive valid observations in memory. Invalid poses, stale frames, resolution changes or apparent-height jumps reset this buffer. Measurements use independently calibrated observations and a median; insufficient or variable observations produce manual fields. This improves resistance to jitter, not validated accuracy.
+- Crown detection requires three supported mask rows. Torso widths use five neighboring rows, reject uncertain confidence boundaries, and avoid isolated maximum-width spikes. Side anatomical levels use the visible shoulder/hip chain. An arm near a measured side boundary flags that slice as unusable; this heuristic cannot detect all occlusion or infer body shape under clothing.
+- After capture, review both local photos. Adjust the chest, natural waist and fullest hip levels independently to the same anatomical locations. Expand height reference controls to align the head and floor endpoints. Reviewed levels and endpoint offsets transfer to each stable observation. Images and masks are discarded when results replace the review or on retake; exports contain calibration metadata, not images.
+- New quality thresholds are engineering safeguards, not clinically or anthropometrically validated confidence bounds. Compare body measurements at matched anatomical locations against repeated tape measurements across users and devices before setting an accuracy target.
+
 **This is an implemented estimation workflow, not a validated measuring instrument. Do not promise exact results or cut fabric without verification.** Production use requires field validation against tape measurements across devices, body shapes, clothing, mobility needs and lighting conditions.
 
 All 40 requested fields are present. The engine returns `null` with a reason for values that cannot be observed reliably: across back, armhole, back length, front/back/full rise, garment leg opening and the middle fingertip endpoint. Users can enter these manually; full rise is calculated after both rise values are entered. The index-finger landmark is not substituted for the middle fingertip.

@@ -16,6 +16,7 @@ import { PoseDetector } from "@/lib/poseDetector";
 import { voiceDirector } from "@/lib/voiceDirector";
 import { advance, initialMachine, type Machine } from "@/lib/captureMachine";
 import { validatePose } from "@/lib/poseValidation";
+import { collectStableFrames, torsoAnchors } from "@/lib/captureQuality";
 import type { Capture, CaptureState, Frame, Validation } from "@/lib/types";
 
 const connections = [
@@ -56,6 +57,7 @@ export function CameraViewport({
     session = useRef(0),
     starting = useRef(false);
   const machine = useRef<Machine>(initialMachine()),
+    samples = useRef<Frame[]>([]),
     front = useRef<Capture | null>(null),
     previous = useRef<Frame | undefined>(undefined),
     countdownRef = useRef<number | null>(null);
@@ -82,6 +84,7 @@ export function CameraViewport({
     stop();
     machine.current = initialMachine();
     front.current = null;
+    samples.current = [];
     previous.current = undefined;
     countdownRef.current = null;
     setState("IDLE");
@@ -129,7 +132,7 @@ export function CameraViewport({
           "This browser does not support local pose analysis. Use an updated Chrome, Edge, or Safari.",
         );
       voiceDirector.speak(
-        "Please step back until your whole body is visible on screen.",
+        "Keep the camera level and place your whole body in the frame, from head to bare feet.",
         true,
       );
       const media = await navigator.mediaDevices.getUserMedia({
@@ -219,6 +222,25 @@ export function CameraViewport({
             result.message =
               "Finding your body outline. Use a plain background and even lighting.";
           }
+          const collecting = machine.current.state !== "TURN_INSTRUCTION";
+          const nextSamples = collectStableFrames(
+            samples.current,
+            frame,
+            side,
+            result.valid && collecting,
+          );
+          if (
+            result.valid &&
+            collecting &&
+            samples.current.length &&
+            nextSamples.length === 1
+          ) {
+            machine.current = {
+              ...initialMachine(),
+              state: side ? "SIDE_PROFILE" : "A_POSE_FRONT",
+            };
+          }
+          samples.current = nextSamples;
           previous.current = frame;
           const next = advance(machine.current, result.valid, frame.timestamp);
           const oldState = machine.current.state;
@@ -294,9 +316,10 @@ export function CameraViewport({
               ctx.fill();
             }
           if (frame.landmarks.length >= 33) {
-            const sy = (frame.landmarks[11].y + frame.landmarks[12].y) / 2,
-              hy = (frame.landmarks[23].y + frame.landmarks[24].y) / 2;
-            const center = (frame.landmarks[23].x + frame.landmarks[24].x) / 2;
+            const { shoulder, hip } = torsoAnchors(frame, side);
+            const sy = shoulder.y,
+              hy = hip.y;
+            const center = hip.x;
             [0.24, 0.72, 1].forEach((fraction, i) => {
               ctx.strokeStyle = ["#b1d0b5", "#d4b387", "#ac9fc7"][i];
               ctx.setLineDash([8, 6]);
@@ -334,7 +357,9 @@ export function CameraViewport({
             front.current = {
               ...frame,
               image: snapshot.toDataURL("image/jpeg", 0.92),
+              samples: samples.current,
             };
+            samples.current = [];
             previous.current = undefined;
             voiceDirector.speak(
               "Front view captured. Turn 90 degrees to your right for the side view. Keep your arms relaxed.",
@@ -344,6 +369,7 @@ export function CameraViewport({
             const sideCapture = {
               ...frame,
               image: snapshot.toDataURL("image/jpeg", 0.92),
+              samples: samples.current,
             };
             const frontCapture = front.current;
             stop();

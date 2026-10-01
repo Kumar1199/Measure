@@ -8,7 +8,11 @@ import {
   ellipsePerimeter,
   assessCapturePair,
   createResult,
+  robustContourSlice,
+  armObscuresSlice,
 } from "../lib/measurementCalculations";
+import { bodyReference } from "../lib/bodyReference";
+import { collectStableFrames, defaultLevels } from "../lib/captureQuality";
 import { syntheticCapture } from "../lib/demo";
 import { angle, validatePose } from "../lib/poseValidation";
 import type { Profile } from "../lib/types";
@@ -20,6 +24,137 @@ const profile: Profile = {
   shirtLengthCm: 75,
   shoeClearanceCm: 2,
 };
+describe("Measurement robustness", () => {
+  it("uses reviewed head and floor endpoints for scale and rejects invalid offsets", () => {
+    const frame = syntheticCapture();
+    const before = calibrate(frame, 175);
+    frame.heightOffsets = { crown: 0.01, heel: 0.02 };
+    const after = calibrate(frame, 175);
+    expect(after.crown).toBeCloseTo(before.crown + 0.01);
+    expect(after.heel).toBeCloseTo(before.heel + 0.02);
+    expect(after.scale).toBeLessThan(before.scale);
+    frame.heightOffsets.heel = NaN;
+    expect(() => calibrate(frame, 175)).toThrow("Invalid height");
+  });
+  it("ignores isolated foreground above the crown", () => {
+    const frame = syntheticCapture();
+    const expected = bodyReference(frame).crown;
+    for (let x = 185; x < 215; x++) frame.mask!.data[12 * 400 + x] = 1;
+    expect(bodyReference(frame).crown).toBe(expected);
+  });
+  it("does not let a single wide mask row inflate a torso width", () => {
+    const frame = syntheticCapture();
+    const before = robustContourSlice(frame, 0.35, 0.5)!;
+    for (let x = 80; x < 320; x++) frame.mask!.data[210 * 400 + x] = 1;
+    const after = robustContourSlice(frame, 0.35, 0.5)!;
+    expect(after.right - after.left).toBeCloseTo(before.right - before.left, 2);
+  });
+  it("rejects boundaries whose location depends strongly on mask confidence", () => {
+    const frame = syntheticCapture();
+    for (let y = 207; y <= 213; y++)
+      for (let x = 120; x <= 280; x++)
+        frame.mask!.data[y * 400 + x] = x > 160 && x < 240 ? 1 : 0.6;
+    expect(robustContourSlice(frame, 0.35, 0.5)).toBeNull();
+  });
+  it("detects an arm touching a side contour boundary", () => {
+    const frame = syntheticCapture(true);
+    [12, 14, 16].forEach((i) => (frame.landmarks[i].visibility = 0.1));
+    frame.landmarks[13] = { x: 0.6, y: 0.3, visibility: 1 };
+    frame.landmarks[15] = { x: 0.6, y: 0.6, visibility: 1 };
+    expect(armObscuresSlice(frame, 0.45, { left: 0.4, right: 0.61 })).toBe(
+      true,
+    );
+    expect(armObscuresSlice(frame, 0.45, { left: 0.4, right: 0.5 })).toBe(
+      false,
+    );
+  });
+  it("ignores hidden far-side shoulder and hip jitter in circumference levels", () => {
+    const front = syntheticCapture(),
+      side = syntheticCapture(true);
+    [12, 14, 16, 24, 26, 28, 30].forEach(
+      (i) => (side.landmarks[i].visibility = 0.1),
+    );
+    const before = calculateMeasurements(front, side, profile);
+    side.landmarks[12].y = 0.1;
+    side.landmarks[24].y = 0.8;
+    const after = calculateMeasurements(front, side, profile);
+    expect(after[6].valueCm).toBe(before[6].valueCm);
+    expect(after[8].valueCm).toBe(before[8].valueCm);
+  });
+  it("resets burst history on bad frames, camera stalls, and scale changes", () => {
+    const a = { ...syntheticCapture(), timestamp: 1000 };
+    const b = { ...syntheticCapture(), timestamp: 1700 };
+    expect(collectStableFrames([a], b, false, true)).toHaveLength(2);
+    expect(collectStableFrames([a], b, false, false)).toHaveLength(0);
+    expect(
+      collectStableFrames([a], { ...b, timestamp: 4000 }, false, true),
+    ).toHaveLength(1);
+    expect(
+      collectStableFrames(
+        [a],
+        { ...scaledCapture(b, 0.8), timestamp: 1700 },
+        false,
+        true,
+      ),
+    ).toHaveLength(1);
+  });
+  it("uses the median of calibrated observations, suppressing a length outlier", () => {
+    const front = syntheticCapture(),
+      side = syntheticCapture(true);
+    front.samples = Array.from({ length: 5 }, () => syntheticCapture());
+    side.samples = Array.from({ length: 5 }, () => syntheticCapture(true));
+    front.samples[0].landmarks[11].x -= 0.1;
+    const rows = calculateMeasurements(front, side, profile);
+    expect(rows[2].valueCm).toBeCloseTo(
+      calculateMeasurements(
+        syntheticCapture(),
+        syntheticCapture(true),
+        profile,
+      )[2].valueCm!,
+      5,
+    );
+    expect(rows[2].method).toContain("Median of 5");
+  });
+  it("withholds unstable burst measurements instead of presenting an average", () => {
+    const front = syntheticCapture(),
+      side = syntheticCapture(true);
+    front.samples = Array.from({ length: 5 }, (_, i) => {
+      const frame = syntheticCapture();
+      frame.landmarks[11].x -= i * 0.025;
+      return frame;
+    });
+    side.samples = Array.from({ length: 5 }, () => syntheticCapture(true));
+    expect(calculateMeasurements(front, side, profile)[2].valueCm).toBeNull();
+  });
+  it("applies reviewed levels and rejects crossed lines", () => {
+    const front = syntheticCapture(),
+      side = syntheticCapture(true);
+    const before = calculateMeasurements(front, side, profile)[21].valueCm!;
+    front.levels = { ...defaultLevels, waist: 0.85 };
+    side.levels = { ...defaultLevels, waist: 0.85 };
+    expect(
+      calculateMeasurements(front, side, profile)[21].valueCm,
+    ).toBeGreaterThan(before);
+    front.levels.waist = 0.15;
+    expect(() => calculateMeasurements(front, side, profile)).toThrow(
+      "Place chest",
+    );
+  });
+  it("scales dimensions proportionally to entered height without changing angles", () => {
+    const a = calculateMeasurements(
+      syntheticCapture(),
+      syntheticCapture(true),
+      profile,
+    );
+    const b = calculateMeasurements(
+      syntheticCapture(),
+      syntheticCapture(true),
+      { ...profile, heightCm: 192.5 },
+    );
+    expect(b[2].valueCm! / a[2].valueCm!).toBeCloseTo(1.1, 8);
+    expect(b[5].valueCm).toBe(a[5].valueCm);
+  });
+});
 describe("Capture safety", () => {
   it("captures with valid CPU inference slower than 500 ms per frame", () => {
     let machine = {

@@ -34,6 +34,7 @@ export function bodyReference(frame: Frame, side = false) {
       Math.ceil((head.x + 0.06) * mask.width),
     );
     const requiredPixels = Math.max(3, Math.round(mask.width * 0.01));
+    let consecutive = 0;
     for (
       let y = Math.max(0, Math.floor((head.y - 0.18) * mask.height));
       y < Math.min(mask.height, head.y * mask.height);
@@ -42,8 +43,10 @@ export function bodyReference(frame: Frame, side = false) {
       let count = 0;
       for (let x = lo; x <= hi; x++)
         if (mask.data[y * mask.width + x] >= 0.65) count++;
-      if (count >= requiredPixels) {
-        crown = y / mask.height;
+      consecutive = count >= requiredPixels ? consecutive + 1 : 0;
+      // A single noisy mask row above the head must not set the global scale.
+      if (consecutive >= 3) {
+        crown = (y - 2) / mask.height;
         break;
       }
     }

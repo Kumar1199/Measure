@@ -84,6 +84,7 @@ for (const sideScale of [1, 0.8]) {
       { frames },
     );
     await page.goto("/");
+    await page.getByLabel("Your height").fill("175");
     await page.getByRole("button", { name: "Enable camera" }).click();
     await expect(
       page.getByRole("progressbar", { name: "Capture hold progress" }),
@@ -97,6 +98,24 @@ for (const sideScale of [1, 0.8]) {
     await expect(
       page.getByText("Front view captured", { exact: true }),
     ).toBeVisible({ timeout: 25000 });
+    await expect(
+      page.getByRole("heading", { name: "Check the measurement lines." }),
+    ).toBeVisible({ timeout: 40000 });
+    await expect(
+      page.getByRole("button", { name: "Calculate measurements" }),
+    ).toBeDisabled();
+    await page.screenshot({
+      path: `.runtime/capture-review-${sideScale}.png`,
+      fullPage: true,
+    });
+    await page
+      .getByRole("slider", { name: "Front Natural waist level" })
+      .fill("0.75");
+    await page
+      .getByRole("slider", { name: "Side Natural waist level" })
+      .fill("0.75");
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Calculate measurements" }).click();
     await expect(
       page.getByText("YOUR PERSONAL SPECIFICATION", { exact: true }),
     ).toBeVisible({ timeout: 40000 });
@@ -121,6 +140,10 @@ test("profile validation, sample review, manual rise, and export", async ({
   page,
 }) => {
   await page.goto("/");
+  await expect(page.getByLabel("Your height")).toHaveValue("");
+  await expect(
+    page.getByRole("button", { name: "Enable camera" }),
+  ).toBeDisabled();
   await expect(
     page.getByRole("heading", { name: "Great fit starts here." }),
   ).toBeVisible();
@@ -167,6 +190,7 @@ test("camera permission error is actionable", async ({ page }) => {
     });
   });
   await page.goto("/");
+  await page.getByLabel("Your height").fill("175");
   await page.getByRole("button", { name: "Enable camera" }).click();
   await expect(page.locator(".camera-error")).toContainText(
     "Camera permission was denied",
@@ -210,6 +234,7 @@ test("loads the real local model, analyzes a camera feed, and releases the camer
 }) => {
   test.setTimeout(120000);
   await page.goto("/");
+  await page.getByLabel("Your height").fill("175");
   await page.getByRole("button", { name: "Enable camera" }).click();
   await expect(page.getByText("LIVE CAMERA", { exact: true })).toBeVisible({
     timeout: 90000,

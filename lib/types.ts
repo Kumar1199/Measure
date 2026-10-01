@@ -18,7 +18,15 @@ export type Frame = {
   brightness: number;
   people: number;
 };
-export type Capture = Frame & { image: string };
+export type CaptureLevels = { chest: number; waist: number; hip: number };
+export type Capture = Frame & {
+  image: string;
+  // Recent valid observations, retained only in memory. No extra photos.
+  samples?: Frame[];
+  // Fractions of shoulder-to-hip distance, transferable across stable frames.
+  levels?: CaptureLevels;
+  heightOffsets?: { crown: number; heel: number };
+};
 export type CaptureState =
   | "IDLE"
   | "CALIBRATING"
@@ -50,5 +58,11 @@ export type ScanResult = {
     reviewRequired: boolean;
     severeMismatch: boolean;
     message: string | null;
+    observations?: { front: number; side: number };
+    reviewedLevels?: { front?: CaptureLevels; side?: CaptureLevels };
+    heightOffsets?: {
+      front?: Capture["heightOffsets"];
+      side?: Capture["heightOffsets"];
+    };
   };
 };
